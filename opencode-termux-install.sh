@@ -240,3 +240,49 @@ echo
 echo "Uso:    cd <projeto> && opencode"
 echo "Update: opencode-update"
 echo "Remove: opencode-uninstall"
+
+# ============================================================================
+# 7) Reinício do Termux — fecha o app e reabre em seguida
+# ============================================================================
+# O Termux roda o instalador no processo "servidor" (bash sem tty), que é
+# separado do processo do app. Matar só o app derruba a UI e as sessões
+# antigas, mas deixa este shell vivo — por isso dá para reabrir na sequencia.
+TERMUX_PKG="com.termux"
+TERMUX_ACT="$TERMUX_PKG/.app.TermuxActivity"
+
+open_termux() {
+  am start --activity-clear-task --activity-new-task -n "$TERMUX_ACT" >/dev/null 2>&1 ||
+    am start -n "$TERMUX_ACT" >/dev/null 2>&1 ||
+    warn "nao consegui reabrir o Termux — abra o app pelo menu"
+}
+
+restart_termux() {
+  local app_pid
+  app_pid=$(pidof "$TERMUX_PKG" 2>/dev/null | tr ' ' '\n' | grep -m1 -E '^[0-9]+$') || true
+
+  # Rede de seguranca: se o Android derrubar este shell junto com o app, o
+  # processo solto abaixo ainda reabre o Termux 3s depois.
+  setsid sh -c 'sleep 3; am start --activity-clear-task --activity-new-task -n "$1" >/dev/null 2>&1 || am start -n "$1" >/dev/null 2>&1' _ "$TERMUX_ACT" </dev/null >/dev/null 2>&1 &
+  disown 2>/dev/null || true
+
+  if [ -n "$app_pid" ] && [ "$app_pid" != "$$" ]; then
+    kill -9 "$app_pid" 2>/dev/null || true
+    sleep 1
+  fi
+  open_termux
+}
+
+echo
+if [ "${OPENCODE_NO_RESTART:-0}" = "1" ]; then
+  info "reinicio do Termux pulado (OPENCODE_NO_RESTART=1)"
+else
+  warn "O Termux sera FECHADO e REABERTO em 10s — o app fecha e volta em seguida."
+  warn "Ctrl+C cancela o reinicio."
+  for i in 10 9 8 7 6 5 4 3 2 1; do
+    printf '\r  reiniciando em %2ds... ' "$i"
+    sleep 1
+  done
+  printf '\r'
+  ok "reiniciando o Termux agora"
+  restart_termux
+fi
